@@ -11,7 +11,7 @@
 - Double-spend protection
 
 ## Tech Stack
-- Go 1.25+
+- Go 1.23+
 - PostgreSQL 16
 - Docker
 
