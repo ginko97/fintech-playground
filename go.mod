@@ -1,4 +1,4 @@
-module github.com/yourusername/fintech-playground
+module github.com/ginko97/fintech-playground
 
 go 1.25.1
 
