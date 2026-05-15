@@ -1,18 +1,34 @@
-# Fintech Playground - Transaction Service (Week 1)
+# Fintech Playground - Transaction Service
 
-**Goal**: Production-grade immutable ledger with clean architecture.
-
-**Status**: Week 1 in progress (May 2026)
+**Immutable ledger with idempotency protection.**
 
 ## Architecture
-- Clean Architecture (Domain → Application → Infrastructure)
-- PostgreSQL immutable ledger
-- UUIDv7 + idempotency
-- Double-spend protection
+```mermaid
+flowchart TD
+    Client[Client] --> Handler[HTTP Handler]
+    Handler --> Service[Transaction Service]
+    Service --> Repository[Transaction Repository]
+    Repository --> PostgreSQL[(PostgreSQL Ledger)]
+    Service -.-> Idempotency[Idempotency Guard]
 
-## Tech Stack
-- Go 1.23+
-- PostgreSQL 16
-- Docker
+## Sequence Diagram - Create Transaction
 
-Week 1 deliverables coming soon.
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant H as Handler
+    participant S as Service
+    participant R as Repository
+    participant DB as PostgreSQL
+
+    C->>H: POST /api/v1/transactions
+    H->>S: Create(req)
+    S->>R: FindByIdempotencyKey(key)
+    alt Transaction Exists
+        R-->>S: Return existing transaction
+    else New Transaction
+        S->>R: Create(tx)
+        R->>DB: INSERT ... ON CONFLICT DO NOTHING
+    end
+    S-->>H: Transaction response
+    H-->>C: 201 Created
