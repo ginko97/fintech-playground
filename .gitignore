@@ -45,7 +45,7 @@ Thumbs.db
 *.swp
 *.swo
 *~
-.code-workspace
+*.code-workspace
 
 # Build artifacts
 dist/

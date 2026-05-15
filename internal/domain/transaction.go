@@ -26,6 +26,7 @@ type Transaction struct {
 	CreatedAt      time.Time `json:"created_at" db:"created_at"`
 	UpdatedAt      time.Time `json:"updated_at" db:"updated_at"`
 	LedgerBalance  int64     `json:"ledger_balance,omitempty" db:"ledger_balance"` // for simple balance tracking
+	Version        int       `json:"version" db:"version"`
 }
 
 func (t Transaction) IsFinal() bool {
