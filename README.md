@@ -1,4 +1,4 @@
-# Fintech Playground - Transaction Service
+# Fintech Playground - Transaction Service (Week 1)
 
 **Immutable ledger with idempotency protection.**
 
@@ -11,8 +11,11 @@ flowchart TD
     Repository --> PostgreSQL[(PostgreSQL Ledger)]
     Service -.-> Idempotency[Idempotency Guard]
 
-## Sequence Diagram - Create Transaction
 
+### 2. Sequence Diagram (copy this entire block)
+
+```markdown
+## Sequence Diagram - Create Transaction
 ```mermaid
 sequenceDiagram
     participant C as Client
