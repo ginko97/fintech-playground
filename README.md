@@ -1,31 +1,38 @@
-# Fintech Playground - Transaction Service
-
-**Immutable ledger with idempotency protection.**
-
-## Architecture
-
+                          Fintech Transaction Service
+────────────────────────────────────────────────────────────
 Client
-   |
-   v
-HTTP Handler
-   |
-   v
-Transaction Service  ----> Idempotency Guard
-   |
-   v
-Transaction Repository
-   |
-   v
-PostgreSQL Ledger (immutable)
+  │
+  ▼
+HTTP Handler (Gin)
+  │
+  ▼
+Transaction Service (Application Layer)
+  │
+  ├─► Idempotency Check (SELECT first)
+  │
+  ▼
+Transaction Repository (Interface)
+  │
+  ▼
+PostgreSQL Ledger
+  (idempotency_key UNIQUE + version column)
 
+Sequence Flow
 
-
-Client          Handler         Service          Repository         PostgreSQL
-  |                 |               |                 |                 |
-  |--- POST /tx --->|               |                 |                 |
-  |                 |--- Create --->|                 |                 |
-  |                 |               |--- FindByKey -->|                 |
-  |                 |               |                 |--- SELECT ----->|
-  |                 |               |<-- Exists ------|                 |
-  |                 |<-- Return tx--|                 |                 |
-  |<-- 201 Created--|               |                 |                 |
+Client ──POST /transactions──► Handler ──Create(req)──► Service
+                                            │
+                                            ▼
+                                      FindByIdempotencyKey()
+                                            │
+                                            ▼
+                                      Repository ──SELECT──► PostgreSQL
+                                            │
+                                      (if exists) ──return existing
+                                            │
+                                      else ──INSERT (ON CONFLICT)──► DB
+                                            │
+                                      ◄──────────────────────────────
+                                            │
+                                      Return Transaction ID
+                                            │
+Client ◄──────────────────── 201 Created ─────────────────────── Handler
