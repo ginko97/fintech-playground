@@ -13,6 +13,9 @@ CREATE TABLE IF NOT EXISTS transactions (
     metadata      JSONB DEFAULT '{}',
     created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at    TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    idempotency_key TEXT UNIQUE NOT NULL,
+    request_id      TEXT NOT NULL,
+    ledger_balance  BIGINT DEFAULT 0,
     version       INTEGER NOT NULL DEFAULT 1
 );
 
