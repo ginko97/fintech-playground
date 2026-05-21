@@ -46,9 +46,12 @@ func (h *TransactionHandler) Create(c *gin.Context) {
 		return
 	}
 
+	h.service.ProcessAsync(tx)
+
 	c.JSON(http.StatusCreated, CreateTransactionResponse{
 		TransactionID:  tx.ID,
 		Status:         string(tx.Status),
 		IdempotencyKey: tx.IdempotencyKey,
 	})
+
 }

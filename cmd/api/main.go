@@ -12,16 +12,19 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ginko97/fintech-playground/internal/application"
 	"github.com/ginko97/fintech-playground/internal/handler"
+	"github.com/ginko97/fintech-playground/internal/infrastructure"
 	"github.com/ginko97/fintech-playground/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 func main() {
+	// === Config ===
 	dbURL := os.Getenv("DATABASE_URL")
 	if dbURL == "" {
 		dbURL = "postgres://fintech:fintech123@localhost:5433/fintech_ledger?sslmode=disable"
 	}
 
+	// === PostgreSQL ===
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
@@ -31,11 +34,25 @@ func main() {
 	}
 	defer db.Close()
 
-	// Wire layers
-	repo := repository.NewTransactionRepository(db)
-	service := application.NewTransactionService(repo)
-	h := handler.NewTransactionHandler(service)
+	// === Redis ===
+	redisClient, err := infrastructure.NewRedisClient()
+	if err != nil {
+		log.Fatalf("Failed to connect to Redis: %v", err)
+	}
+	defer redisClient.Close()
 
+	// === Layers ===
+	repo := repository.NewTransactionRepository(db)
+	stateMachine := application.NewTransactionStateMachine(redisClient)
+	workerPool := application.NewWorkerPool(5, stateMachine)
+	workerPool.Start()
+	defer workerPool.Shutdown()
+
+	txService := application.NewTransactionService(repo, stateMachine, workerPool)
+
+	txHandler := handler.NewTransactionHandler(txService)
+
+	// === Router ===
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
@@ -43,10 +60,10 @@ func main() {
 	})
 
 	v1 := r.Group("/api/v1")
-	v1.POST("/transactions", h.Create)
+	v1.POST("/transactions", txHandler.Create)
 
 	// Graceful shutdown
-	srv := &http.Server{Addr: ":8081", Handler: r}
+	srv := &http.Server{Addr: ":8080", Handler: r}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {

@@ -21,11 +21,21 @@ type CreateTransactionRequest struct {
 }
 
 type TransactionService struct {
-	repo repository.TransactionRepository // ← must be the INTERFACE
+	repo         repository.TransactionRepository
+	stateMachine *TransactionStateMachine
+	workerPool   *WorkerPool
 }
 
-func NewTransactionService(repo repository.TransactionRepository) *TransactionService {
-	return &TransactionService{repo: repo}
+func NewTransactionService(
+	repo repository.TransactionRepository,
+	sm *TransactionStateMachine,
+	wp *WorkerPool,
+) *TransactionService {
+	return &TransactionService{
+		repo:         repo,
+		stateMachine: sm,
+		workerPool:   wp,
+	}
 }
 
 // Create handles idempotency + business rules
@@ -64,4 +74,9 @@ func (s *TransactionService) Create(ctx context.Context, req CreateTransactionRe
 // GetByID example
 func (s *TransactionService) GetByID(ctx context.Context, id string) (*domain.Transaction, error) {
 	return s.repo.FindByID(ctx, id)
+}
+
+// ProcessAsync submits transaction to worker pool for background processing
+func (s *TransactionService) ProcessAsync(tx *domain.Transaction) {
+	s.workerPool.Submit(tx) // we will inject workerPool next
 }
