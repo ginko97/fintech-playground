@@ -2,18 +2,20 @@
 
 ```mermaid
 flowchart LR
-    C["Client"]
-    H["HTTP Handler Gin"]
-    S["Transaction Service"]
-    G["Idempotency Guard"]
-    R["Repository"]
+    Client["Client"] 
+    Handler["HTTP Handler (Gin)"]
+    Service["Transaction Service"]
+    Guard["Idempotency Guard + State Machine"]
+    Repo["Repository"]
     DB[("PostgreSQL Ledger")]
+    Redis[("Redis")]
 
-    C -->|"POST /transactions"| H
-    H -->|"Create(req)"| S
-    S -->|"check"| G
-    S -->|"FindByIdempotencyKey / Create"| R
-    R -->|"INSERT / SELECT"| DB
+    Client -->|"POST /transactions"| Handler
+    Handler -->|"Create(req)"| Service
+    Service -->|"check"| Guard
+    Service -->|"Find/Create"| Repo
+    Repo -->|"INSERT / SELECT"| DB
+    Service -.->|"Async Processing"| Redis
 ```
 
 ## Sequence Diagram
@@ -39,4 +41,17 @@ sequenceDiagram
 
     Service-->>Handler: Transaction
     Handler-->>Client: 201 Created
+    Note over Service,Redis: Worker Pool processes async
 ```
+
+## Key Production Features
+Idempotent Transaction API
+Finite State Machine with safe transitions
+Redis distributed locking
+Worker Pool for background processing
+Webhook handler with HMAC signature validation
+Tokenization service (PCI DSS scope reduction)
+Rate limiting using Redis
+Clean Architecture (Domain / Application / Infrastructure)
+
+How to Run

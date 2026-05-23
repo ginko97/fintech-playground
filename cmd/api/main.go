@@ -13,7 +13,9 @@ import (
 	"github.com/ginko97/fintech-playground/internal/application"
 	"github.com/ginko97/fintech-playground/internal/handler"
 	"github.com/ginko97/fintech-playground/internal/infrastructure"
+	"github.com/ginko97/fintech-playground/internal/middleware"
 	"github.com/ginko97/fintech-playground/internal/repository"
+	"github.com/ginko97/fintech-playground/internal/webhook"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -61,6 +63,11 @@ func main() {
 
 	v1 := r.Group("/api/v1")
 	v1.POST("/transactions", txHandler.Create)
+	webhookHandler := webhook.NewWebhookHandler("your-webhook-secret-123")
+	v1.POST("/webhooks/psp", webhookHandler.HandleWebhook)
+
+	// Middlewares
+	v1.Use(middleware.RateLimit(redisClient, 100, 1*time.Minute))
 
 	// Graceful shutdown
 	srv := &http.Server{Addr: ":8080", Handler: r}
