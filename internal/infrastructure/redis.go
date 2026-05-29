@@ -14,7 +14,7 @@ type RedisClient struct {
 
 func NewRedisClient() (*RedisClient, error) {
 	opts := &redis.Options{
-		Addr:         "localhost:6380",
+		Addr:         "127.0.0.1:6380",
 		Password:     "",
 		DB:           0,
 		DialTimeout:  5 * time.Second,

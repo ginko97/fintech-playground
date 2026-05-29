@@ -2,7 +2,6 @@ package main
 
 import (
 	"context"
-	"log"
 	"net/http"
 	"os"
 	"os/signal"
@@ -17,29 +16,33 @@ import (
 	"github.com/ginko97/fintech-playground/internal/repository"
 	"github.com/ginko97/fintech-playground/internal/webhook"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"go.uber.org/zap"
 )
 
 func main() {
-	// === Config ===
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		dbURL = "postgres://fintech:fintech123@localhost:5433/fintech_ledger?sslmode=disable"
+	// === Initialize Logger & Config ===
+	infrastructure.InitLogger()
+	defer infrastructure.SyncLogger()
+
+	logger := infrastructure.GetLogger()
+	logger.Info("Starting fintech playground service...")
+
+	config, err := infrastructure.LoadConfig()
+	if err != nil {
+		logger.Fatal("Failed to load config", zap.Error(err))
 	}
 
-	// === PostgreSQL ===
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	db, err := pgxpool.New(ctx, dbURL)
+	// === Database ===
+	db, err := pgxpool.New(context.Background(), config.Database.URL)
 	if err != nil {
-		log.Fatalf("Failed to connect to DB: %v", err)
+		logger.Fatal("Failed to connect to PostgreSQL", zap.Error(err))
 	}
 	defer db.Close()
 
 	// === Redis ===
 	redisClient, err := infrastructure.NewRedisClient()
 	if err != nil {
-		log.Fatalf("Failed to connect to Redis: %v", err)
+		logger.Fatal("Failed to connect to Redis", zap.Error(err))
 	}
 	defer redisClient.Close()
 
@@ -51,39 +54,55 @@ func main() {
 	defer workerPool.Shutdown()
 
 	txService := application.NewTransactionService(repo, stateMachine, workerPool)
-
 	txHandler := handler.NewTransactionHandler(txService)
+	webhookHandler := webhook.NewWebhookHandler("your-webhook-secret-123")
 
 	// === Router ===
 	r := gin.Default()
 
+	if config.Server.Mode == "release" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
+	// Middlewares
+	r.Use(middleware.RequestIDMiddleware()) // ← Add this
+	r.Use(middleware.LoggingMiddleware())
+	r.Use(middleware.RateLimit(redisClient, 100, 1*time.Minute))
+
 	r.GET("/health", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"status": "ok", "service": "transaction"})
+		c.JSON(http.StatusOK, gin.H{"status": "ok"})
 	})
 
 	v1 := r.Group("/api/v1")
-	v1.POST("/transactions", txHandler.Create)
-	webhookHandler := webhook.NewWebhookHandler("your-webhook-secret-123")
-	v1.POST("/webhooks/psp", webhookHandler.HandleWebhook)
-
-	// Middlewares
 	v1.Use(middleware.RateLimit(redisClient, 100, 1*time.Minute))
 
-	// Graceful shutdown
-	srv := &http.Server{Addr: ":8080", Handler: r}
+	v1.POST("/transactions", txHandler.Create)
+	v1.POST("/webhooks/psp", webhookHandler.HandleWebhook)
+
+	// === Start Server ===
+	srv := &http.Server{
+		Addr:    ":" + config.Server.Port,
+		Handler: r,
+	}
 
 	go func() {
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("ListenAndServe: %v", err)
+			logger.Fatal("Server failed", zap.Error(err))
 		}
 	}()
 
+	logger.Info("Server started", zap.String("port", config.Server.Port))
+
+	// Graceful Shutdown
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
 	<-quit
 
-	log.Println("Shutting down...")
-	ctx, cancel = context.WithTimeout(context.Background(), 5*time.Second)
+	logger.Info("Shutting down server...")
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	srv.Shutdown(ctx)
+
+	if err := srv.Shutdown(ctx); err != nil {
+		logger.Fatal("Server forced to shutdown", zap.Error(err))
+	}
 }

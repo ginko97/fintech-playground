@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/ginko97/fintech-playground/internal/domain"
+	"github.com/ginko97/fintech-playground/internal/infrastructure"
+	"go.uber.org/zap"
 )
 
 type WorkerPool struct {
@@ -43,7 +45,11 @@ func (wp *WorkerPool) worker(id int) {
 	defer wp.wg.Done()
 
 	for tx := range wp.jobQueue {
-		log.Printf("[Worker %d] Processing tx %s (status: %s)", id, tx.ID, tx.Status)
+		infrastructure.GetLogger().Info("worker_processing",
+			zap.Int("worker_id", id),
+			zap.String("transaction_id", tx.ID),
+			zap.String("status", string(tx.Status)),
+		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		// Simulate external processing (PSP call, etc.)

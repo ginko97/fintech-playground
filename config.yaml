@@ -1,0 +1,9 @@
+server:
+  port: "8080"
+  mode: "debug"
+
+database:
+  url: "postgres://fintech:fintech123@localhost:5433/fintech_ledger?sslmode=disable"
+
+redis:
+  addr: "localhost:6380"
