@@ -6,12 +6,14 @@ import (
 	"time"
 
 	"github.com/ginko97/fintech-playground/internal/domain"
+	"github.com/ginko97/fintech-playground/internal/fraud"
 	"github.com/ginko97/fintech-playground/internal/gateway"
 	"github.com/ginko97/fintech-playground/internal/repository"
+	"github.com/ginko97/fintech-playground/internal/wallet"
 	"github.com/google/uuid"
 )
 
-// CreateTransactionRequest - DTO from handler (input model)
+// CreateTransactionRequest - DTO from handler
 type CreateTransactionRequest struct {
 	IdempotencyKey string `json:"idempotency_key" validate:"required"`
 	SourceWalletID string `json:"source_wallet_id" validate:"required"`
@@ -27,12 +29,16 @@ type TransactionService struct {
 	workerPool      *WorkerPool
 	externalGateway *gateway.AdvancedGateway
 	circuitBreaker  *gateway.CircuitBreaker
+	fraudEngine     *fraud.FraudEngine
+	walletService   *wallet.WalletService
 }
 
 func NewTransactionService(
 	repo repository.TransactionRepository,
 	sm *TransactionStateMachine,
 	wp *WorkerPool,
+	fraudEngine *fraud.FraudEngine,
+	walletService *wallet.WalletService,
 ) *TransactionService {
 	return &TransactionService{
 		repo:            repo,
@@ -40,12 +46,14 @@ func NewTransactionService(
 		workerPool:      wp,
 		externalGateway: gateway.NewAdvancedGateway(),
 		circuitBreaker:  gateway.NewCircuitBreaker(5),
+		fraudEngine:     fraudEngine,
+		walletService:   walletService,
 	}
 }
 
-// Create handles idempotency + business rules
+// Create handles idempotency + business rules + fraud check
 func (s *TransactionService) Create(ctx context.Context, req CreateTransactionRequest) (*domain.Transaction, error) {
-	// 1. Idempotency check (safe retry)
+	// 1. Idempotency check
 	if tx, err := s.repo.FindByIdempotencyKey(ctx, req.IdempotencyKey); err == nil {
 		return tx, nil
 	} else if !errors.Is(err, repository.ErrNotFound) {
@@ -68,36 +76,30 @@ func (s *TransactionService) Create(ctx context.Context, req CreateTransactionRe
 		Version:        1,
 	}
 
-	// 3. Persist
-	if err := s.repo.Create(ctx, tx); err != nil {
-		return nil, err
-	}
-
-	// Call external PSP with circuit breaker
-	err := s.circuitBreaker.Execute(ctx, func() error {
-		_, err := s.externalGateway.ProcessPayment(ctx, tx)
-		return err
-	})
-
-	if err != nil {
+	// 3. Fraud Check
+	if err := s.fraudEngine.Check(ctx, tx); err != nil {
 		tx.Status = domain.StatusFailed
+		s.repo.Create(ctx, tx)
+		return tx, err
 	}
 
+	// 4. Save transaction
 	if err := s.repo.Create(ctx, tx); err != nil {
 		return nil, err
 	}
 
-	s.ProcessAsync(tx) // send to worker pool
+	// 5. Submit to background worker
+	s.ProcessAsync(tx)
 
 	return tx, nil
+}
+
+// ProcessAsync submits to worker pool
+func (s *TransactionService) ProcessAsync(tx *domain.Transaction) {
+	s.workerPool.Submit(tx)
 }
 
 // GetByID example
 func (s *TransactionService) GetByID(ctx context.Context, id string) (*domain.Transaction, error) {
 	return s.repo.FindByID(ctx, id)
-}
-
-// ProcessAsync submits transaction to worker pool for background processing
-func (s *TransactionService) ProcessAsync(tx *domain.Transaction) {
-	s.workerPool.Submit(tx) // we will inject workerPool next
 }

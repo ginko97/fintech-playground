@@ -10,10 +10,12 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/ginko97/fintech-playground/internal/application"
+	"github.com/ginko97/fintech-playground/internal/fraud"
 	"github.com/ginko97/fintech-playground/internal/handler"
 	"github.com/ginko97/fintech-playground/internal/infrastructure"
 	"github.com/ginko97/fintech-playground/internal/middleware"
 	"github.com/ginko97/fintech-playground/internal/repository"
+	"github.com/ginko97/fintech-playground/internal/wallet"
 	"github.com/ginko97/fintech-playground/internal/webhook"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"go.uber.org/zap"
@@ -48,12 +50,20 @@ func main() {
 
 	// === Layers ===
 	repo := repository.NewTransactionRepository(db)
+
+	// Wallet
+	walletRepo := repository.NewWalletRepository(db) // ← Add this
+	walletService := wallet.NewWalletService(walletRepo)
+
+	// Fraud
+	fraudEngine := fraud.NewFraudEngine()
+
 	stateMachine := application.NewTransactionStateMachine(redisClient)
 	workerPool := application.NewWorkerPool(5, stateMachine)
 	workerPool.Start()
 	defer workerPool.Shutdown()
 
-	txService := application.NewTransactionService(repo, stateMachine, workerPool)
+	txService := application.NewTransactionService(repo, stateMachine, workerPool, fraudEngine, walletService)
 	txHandler := handler.NewTransactionHandler(txService)
 	webhookHandler := webhook.NewWebhookHandler("your-webhook-secret-123")
 
