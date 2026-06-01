@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ginko97/fintech-playground/internal/domain"
+	"github.com/ginko97/fintech-playground/internal/gateway"
 	"github.com/ginko97/fintech-playground/internal/repository"
 	"github.com/google/uuid"
 )
@@ -21,9 +22,11 @@ type CreateTransactionRequest struct {
 }
 
 type TransactionService struct {
-	repo         repository.TransactionRepository
-	stateMachine *TransactionStateMachine
-	workerPool   *WorkerPool
+	repo            repository.TransactionRepository
+	stateMachine    *TransactionStateMachine
+	workerPool      *WorkerPool
+	externalGateway *gateway.AdvancedGateway
+	circuitBreaker  *gateway.CircuitBreaker
 }
 
 func NewTransactionService(
@@ -32,9 +35,11 @@ func NewTransactionService(
 	wp *WorkerPool,
 ) *TransactionService {
 	return &TransactionService{
-		repo:         repo,
-		stateMachine: sm,
-		workerPool:   wp,
+		repo:            repo,
+		stateMachine:    sm,
+		workerPool:      wp,
+		externalGateway: gateway.NewAdvancedGateway(),
+		circuitBreaker:  gateway.NewCircuitBreaker(5),
 	}
 }
 
@@ -67,6 +72,22 @@ func (s *TransactionService) Create(ctx context.Context, req CreateTransactionRe
 	if err := s.repo.Create(ctx, tx); err != nil {
 		return nil, err
 	}
+
+	// Call external PSP with circuit breaker
+	err := s.circuitBreaker.Execute(ctx, func() error {
+		_, err := s.externalGateway.ProcessPayment(ctx, tx)
+		return err
+	})
+
+	if err != nil {
+		tx.Status = domain.StatusFailed
+	}
+
+	if err := s.repo.Create(ctx, tx); err != nil {
+		return nil, err
+	}
+
+	s.ProcessAsync(tx) // send to worker pool
 
 	return tx, nil
 }

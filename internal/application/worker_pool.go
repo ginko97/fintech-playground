@@ -47,18 +47,20 @@ func (wp *WorkerPool) worker(id int) {
 	for tx := range wp.jobQueue {
 		infrastructure.GetLogger().Info("worker_processing",
 			zap.Int("worker_id", id),
-			zap.String("transaction_id", tx.ID),
-			zap.String("status", string(tx.Status)),
+			zap.String("transaction_id", tx.ID),     // must be exported (ID)
+			zap.String("status", string(tx.Status)), // must be exported (Status)
 		)
 
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		// Simulate external processing (PSP call, etc.)
 		err := wp.processTransaction(ctx, tx)
 		cancel()
 
 		if err != nil {
-			log.Printf("[Worker %d] Failed tx %s: %v", id, tx.ID, err)
-			// TODO: push to DLQ later
+			infrastructure.GetLogger().Error("worker_processing_failed",
+				zap.Int("worker_id", id),
+				zap.String("transaction_id", tx.ID),
+				zap.Error(err),
+			)
 		}
 	}
 }
